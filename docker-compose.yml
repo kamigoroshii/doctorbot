@@ -1,0 +1,46 @@
+version: '3.8'
+
+services:
+  doctorbot-backend:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - API_HOST=0.0.0.0
+      - API_PORT=8000
+      - DATABASE_URL=sqlite:///./doctorbot.db
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data
+      - ./doctorbot.db:/app/doctorbot.db
+    command: python main.py backend
+    restart: unless-stopped
+
+  doctorbot-bot:
+    build: .
+    depends_on:
+      - doctorbot-backend
+    environment:
+      - API_BASE_URL=http://doctorbot-backend:8000
+    env_file:
+      - .env
+    command: python main.py bot
+    restart: unless-stopped
+
+  n8n:
+    image: n8nio/n8n:latest
+    ports:
+      - "5678:5678"
+    environment:
+      - N8N_BASIC_AUTH_ACTIVE=true
+      - N8N_BASIC_AUTH_USER=admin
+      - N8N_BASIC_AUTH_PASSWORD=password
+      - WEBHOOK_URL=http://localhost:5678
+    volumes:
+      - n8n_data:/home/node/.n8n
+      - ./workflows:/home/node/.n8n/workflows
+    restart: unless-stopped
+
+volumes:
+  n8n_data:

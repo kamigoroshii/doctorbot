@@ -1,0 +1,164 @@
+{
+  "name": "DoctorBot Medication Reminders",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "medication-reminder",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-node",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$json.action}}",
+              "operation": "equal",
+              "value2": "schedule_reminder"
+            }
+          ]
+        }
+      },
+      "id": "if-schedule",
+      "name": "If Schedule",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "={{$json.cron_expression}}"
+            }
+          ]
+        }
+      },
+      "id": "cron-trigger",
+      "name": "Cron Trigger",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [680, 200]
+    },
+    {
+      "parameters": {
+        "chatId": "={{$json.telegram_user_id}}",
+        "text": "⏰ **Medication Reminder**\n\n💊 It's time to take: **{{$json.medication_name}}**\n📏 Dosage: {{$json.dosage}}\n\n✅ Reply 'taken' when you've taken your medication\n⏭️ Reply 'skip' to skip this dose\n⏰ Reply 'snooze' to remind me in 15 minutes"
+      },
+      "id": "telegram-send",
+      "name": "Send Telegram Reminder",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [900, 200],
+      "credentials": {
+        "telegramApi": {
+          "id": "telegram-credentials",
+          "name": "Telegram Bot Credentials"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "={{$json.callback_url}}/reminder-sent",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "reminder_id",
+              "value": "={{$json.reminder_id}}"
+            },
+            {
+              "name": "sent_at",
+              "value": "={{$now}}"
+            },
+            {
+              "name": "status",
+              "value": "sent"
+            }
+          ]
+        }
+      },
+      "id": "callback-api",
+      "name": "Update Backend",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [1120, 200]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\"success\": true, \"message\": \"Reminder scheduled\"}"
+      },
+      "id": "response-success",
+      "name": "Success Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [680, 400]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\"success\": false, \"message\": \"Invalid action\"}"
+      },
+      "id": "response-error",
+      "name": "Error Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [680, 500]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "If Schedule",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If Schedule": {
+      "main": [
+        [
+          {
+            "node": "Success Response",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Error Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Telegram Reminder": {
+      "main": [
+        [
+          {
+            "node": "Update Backend",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {},
+  "versionId": "1"
+}

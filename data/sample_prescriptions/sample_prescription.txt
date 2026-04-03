@@ -1,0 +1,66 @@
+==================================================
+        CITY GENERAL HOSPITAL
+        Department of Internal Medicine
+        123 Medical Avenue, New York, NY 10001
+        Phone: (212) 555-0100 | Fax: (212) 555-0101
+==================================================
+
+PRESCRIPTION
+
+Doctor  : Dr. Emily Carter, MD (Reg. No. MC-48291)
+Date    : March 12, 2026
+Clinic  : City General Hospital, Room 204
+
+--------------------------------------------------
+Patient Information
+--------------------------------------------------
+Name    : John Anderson
+Age     : 52 years
+Weight  : 78 kg
+Allergy : Penicillin (noted)
+
+--------------------------------------------------
+Rx (Medications)
+--------------------------------------------------
+
+1. Amoxicillin 500mg
+   Sig: 1 capsule TID (three times daily)
+   Duration: 7 days
+   Instructions: Take after meals. Complete full course.
+
+2. Ibuprofen 400mg
+   Sig: 1 tablet BD (twice daily)
+   Duration: 5 days
+   Instructions: Take with food or milk to avoid stomach upset.
+   Do NOT take on empty stomach.
+
+3. Omeprazole 20mg
+   Sig: 1 capsule OD (once daily)
+   Duration: 14 days
+   Instructions: Take 30 minutes before breakfast.
+
+4. Cetirizine 10mg
+   Sig: 1 tablet OD (once daily at night)
+   Duration: 10 days
+   Instructions: May cause drowsiness. Avoid driving.
+
+5. Vitamin D3 1000 IU
+   Sig: 1 tablet OD (once daily)
+   Duration: 30 days
+   Instructions: Take with a meal for better absorption.
+
+--------------------------------------------------
+Doctor Notes
+--------------------------------------------------
+- Patient presents with upper respiratory tract infection.
+- Monitor for any allergic reactions.
+- Return for follow-up in 7 days if symptoms persist.
+- Avoid alcohol during course of antibiotics.
+- Drink plenty of fluids (at least 8 glasses/day).
+
+--------------------------------------------------
+                Dr. Emily Carter, MD
+                Signature: _________________
+                Date: March 12, 2026
+==================================================
+⚠ This prescription is valid for 30 days from the date of issue.
