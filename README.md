@@ -9,6 +9,7 @@ It accepts prescription images or documents, extracts medication details, checks
 - FastAPI + Uvicorn for the backend API
 - python-telegram-bot for Telegram integration
 - OCR pipeline with Tesseract + OpenCV
+- Hybrid prescription entity extraction for Drug / Dose / Frequency / Duration from OCR text
 - AI provider via environment selection:
   - `grok` with `GROK_API_KEY`
   - `openrouter` with `OPENROUTER_API_KEY`
@@ -135,6 +136,12 @@ Invoke-WebRequest http://127.0.0.1:8000/health
 - `GET /health` backend + AI provider health
 - `POST /process-prescription` upload image prescription
 - `POST /process-document` upload PDF/DOC/DOCX/TXT/image document
+
+The API response now also includes:
+
+- `extraction_method` to show whether the hybrid extractor or fallback parser was used
+- `extraction_confidence` for the hybrid extractor
+- `extraction_summary` with the raw entity candidates
 
 ## Optional: Docker Compose
 

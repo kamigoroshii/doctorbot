@@ -397,6 +397,10 @@ Need help? Just ask me anything!
         try:
             schedule = result["medication_schedule"]
             warnings = result.get("warnings", [])
+            extraction_method = result.get("extraction_method")
+            extraction_confidence = result.get("extraction_confidence")
+            extraction_summary = result.get("extraction_summary", {})
+            extracted_text = result.get("extracted_text", "")
 
             if schedule.get("total_medications", 0) == 0:
                 warning_msg = (
@@ -417,15 +421,47 @@ Need help? Just ask me anything!
             
             # Create medication schedule message
             message = "✅ **Prescription Processed Successfully!**\n\n"
+            if extraction_method:
+                message += f"🧠 **Extraction Method:** {extraction_method}\n"
+            if extraction_confidence is not None:
+                message += f"📈 **Extraction Confidence:** {float(extraction_confidence):.2f}\n"
+            if extraction_method or extraction_confidence is not None:
+                message += "\n"
             message += f"📋 **Medication Schedule** ({schedule['total_medications']} medications):\n\n"
+
+            if extracted_text and extracted_text not in ["[Parsed directly from image with Gemini Vision fallback]"]:
+                preview_lines = [line.strip() for line in extracted_text.splitlines() if line.strip()][:4]
+                if preview_lines:
+                    message += "🧾 **OCR Evidence**:\n"
+                    for line in preview_lines:
+                        message += f"   • {line[:90]}\n"
+                    message += "\n"
             
             for i, med in enumerate(schedule["medications"], 1):
                 message += f"**{i}. {med['name']}**\n"
                 message += f"   💊 Dosage: {med['dosage']}\n"
                 message += f"   🕐 Frequency: {med['frequency']}\n"
                 message += f"   ⏰ Times: {', '.join(med['schedule_times'])}\n"
+                if med.get('duration'):
+                    message += f"   📅 Duration: {med['duration']}\n"
                 if med.get('instructions'):
                     message += f"   📝 Instructions: {med['instructions']}\n"
+                if med.get('source_line'):
+                    message += f"   🔎 Source: {med['source_line'][:90]}\n"
+                message += "\n"
+
+            if extraction_confidence is not None and float(extraction_confidence) < 0.75:
+                message += (
+                    "⚠️ **Low-confidence note:** the medicine name may need a quick manual check.\n\n"
+                )
+
+            if extraction_summary and extraction_summary.get("entities"):
+                message += "🧠 **Extraction Candidates:**\n"
+                for entity in extraction_summary.get("entities", [])[:3]:
+                    message += (
+                        f"   • {entity.get('name')} | {entity.get('dosage')} | {entity.get('frequency')}"
+                        f" | {entity.get('matched_by', 'unknown')}\n"
+                    )
                 message += "\n"
             
             # Add warnings if any

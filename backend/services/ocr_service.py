@@ -247,13 +247,16 @@ class OCRService:
         return score
 
     def _select_best_ocr_result(self, candidates: List[str]) -> str:
-        """Return highest-scoring OCR candidate. Returns '' if all are noise (<10)."""
+        """Return highest-scoring OCR candidate, preferring usable text over a hard failure."""
         if not candidates:
             return ""
         best = max(candidates, key=self._score_ocr_text)
         best_score = self._score_ocr_text(best)
         print(f"📊 OCR best score: {best_score} (from {len(candidates)} candidates)")
         if best_score < 10:
+            if len(best.strip()) >= 8:
+                print("⚠️  OCR score is low, but returning the best available text instead of failing")
+                return best
             print("⚠️  All OCR candidates are noise (score < 10)")
             return ""
         return best

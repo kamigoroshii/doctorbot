@@ -5,7 +5,8 @@ from sqlalchemy.sql import func
 import os
 from dotenv import load_dotenv
 
-load_dotenv()
+# Prioritize project .env over machine-level env vars for predictable local startup.
+load_dotenv(override=True)
 
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./doctorbot.db")
 
