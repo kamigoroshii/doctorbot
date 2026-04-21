@@ -27,3 +27,4 @@ soundfile>=0.12.1
 SpeechRecognition>=3.10.0
 langdetect>=1.0.9
 deep-translator>=1.11.4
+gTTS>=2.5.1

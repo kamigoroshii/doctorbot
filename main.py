@@ -10,6 +10,7 @@ import sys
 import platform
 import time
 from pathlib import Path
+from urllib.parse import urlparse, urlunparse
 import httpx
 from dotenv import load_dotenv
 
@@ -37,16 +38,46 @@ async def start_backend():
     server = uvicorn.Server(config)
     await server.serve()
 
+def _local_api_base_candidates(base_url: str | None, port: int) -> list[str]:
+    """Build local URLs to probe when checking whether the backend is up."""
+    candidates: list[str] = []
+
+    if base_url:
+        candidates.append(base_url.rstrip("/"))
+
+        parsed = urlparse(base_url)
+        if parsed.scheme and parsed.hostname in {"localhost", "127.0.0.1", "0.0.0.0", "::1"}:
+            normalized = parsed._replace(netloc=f"127.0.0.1:{parsed.port or port}")
+            candidates.append(urlunparse(normalized).rstrip("/"))
+
+    candidates.extend([
+        f"http://127.0.0.1:{port}",
+        f"http://localhost:{port}",
+    ])
+
+    # Preserve order while removing duplicates.
+    return list(dict.fromkeys(candidates))
+
 def wait_for_backend(base_url: str, timeout_seconds: int = 15) -> bool:
     """Wait for the backend health endpoint to become reachable."""
     deadline = time.time() + timeout_seconds
+    parsed = urlparse(base_url)
+    port = parsed.port or 8000
+    candidates = _local_api_base_candidates(base_url, port)
+
     while time.time() < deadline:
-        try:
-            response = httpx.get(f"{base_url.rstrip('/')}/health", timeout=2.0)
-            if response.status_code == 200:
-                return True
-        except Exception:
-            pass
+        for candidate in candidates:
+            try:
+                with httpx.Client(timeout=2.0, trust_env=False) as client:
+                    root_response = client.get(f"{candidate}/")
+                    if root_response.status_code == 200:
+                        return True
+
+                    health_response = client.get(f"{candidate}/health")
+                    if health_response.status_code == 200:
+                        return True
+            except Exception:
+                continue
         time.sleep(1)
     return False
 
@@ -114,10 +145,12 @@ def main():
             api_port = int(os.getenv("API_PORT", 8000))
             api_base_url = os.getenv("API_BASE_URL", f"http://{api_host}:{api_port}")
 
-            if not wait_for_backend(api_base_url):
+            if not wait_for_backend(api_base_url, timeout_seconds=30):
                 backend_process.terminate()
+                if backend_process.poll() is not None:
+                    print(f"❌ Backend process exited early with code {backend_process.returncode}.")
                 print("❌ Backend failed to start or is unreachable.")
-                print(f"Check the backend logs and verify {api_base_url}/health is reachable.")
+                print(f"Check the backend logs and verify {api_base_url}/ and {api_base_url}/health are reachable.")
                 return
 
             print(f"✅ Backend started at {api_base_url}")

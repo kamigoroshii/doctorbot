@@ -1,8 +1,10 @@
 import os
 import logging
+import re
 import httpx
 from datetime import time
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from urllib.parse import urlparse, urlunparse
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputFile
 from telegram.error import BadRequest
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
 from dotenv import load_dotenv
@@ -10,8 +12,8 @@ import asyncio
 import io
 import soundfile as sf
 import speech_recognition as sr
-from langdetect import detect
 from deep_translator import GoogleTranslator
+from gtts import gTTS
 
 load_dotenv()
 
@@ -24,10 +26,42 @@ logger = logging.getLogger(__name__)
 
 class DoctorBot:
     TELEGRAM_MAX_MESSAGE_LENGTH = 4096
+    SUPPORTED_LANGUAGES = {
+        "en": "English",
+        "es": "Spanish",
+        "fr": "French",
+        "de": "German",
+        "it": "Italian",
+        "pt": "Portuguese",
+        "hi": "Hindi",
+        "ar": "Arabic",
+        "tr": "Turkish",
+        "nl": "Dutch",
+        "pl": "Polish",
+        "ru": "Russian",
+        "ja": "Japanese",
+        "ko": "Korean",
+        "zh-cn": "Chinese (Simplified)",
+        "zh-tw": "Chinese (Traditional)",
+        "id": "Indonesian",
+        "vi": "Vietnamese",
+        "th": "Thai",
+        "sv": "Swedish",
+        "da": "Danish",
+        "fi": "Finnish",
+        "no": "Norwegian",
+        "el": "Greek",
+        "he": "Hebrew",
+        "cs": "Czech",
+        "sk": "Slovak",
+        "ro": "Romanian",
+        "hu": "Hungarian",
+        "uk": "Ukrainian",
+    }
 
     def __init__(self):
         self.token = os.getenv("TELEGRAM_BOT_TOKEN")
-        self.api_base_url = os.getenv("API_BASE_URL", "http://localhost:8000")
+        self.api_base_url = self._normalize_api_base_url(os.getenv("API_BASE_URL", "http://127.0.0.1:8000"))
         
         if not self.token:
             raise ValueError("TELEGRAM_BOT_TOKEN environment variable is required")
@@ -35,6 +69,15 @@ class DoctorBot:
         self.application = Application.builder().token(self.token).build()
         self.application.bot_data.setdefault("active_reminders", {})
         self._setup_handlers()
+
+    def _normalize_api_base_url(self, base_url: str) -> str:
+        """Prefer IPv4 loopback for local API access to avoid localhost resolution issues."""
+        parsed = urlparse(base_url)
+        if parsed.scheme and parsed.hostname == "localhost":
+            host = "127.0.0.1"
+            netloc = f"{host}:{parsed.port}" if parsed.port else host
+            return urlunparse(parsed._replace(netloc=netloc)).rstrip("/")
+        return base_url.rstrip("/")
     
     def _setup_handlers(self):
         """Setup bot command and message handlers"""
@@ -43,6 +86,8 @@ class DoctorBot:
         self.application.add_handler(CommandHandler("help", self.help_command))
         self.application.add_handler(CommandHandler("myreminders", self.reminders_command))
         self.application.add_handler(CommandHandler("status", self.status_command))
+        self.application.add_handler(CommandHandler("speak", self.speak_command))
+        self.application.add_handler(CommandHandler("lang", self.lang_command))
         
         # Message handlers
         self.application.add_handler(MessageHandler(filters.PHOTO, self.handle_prescription_photo))
@@ -66,6 +111,9 @@ Your smart prescription companion is ready.
 💊 Build a clear medication schedule
 ⚠️ Flag safety issues and possible interactions
 ⏰ Set up medication reminder alerts
+🌍 Auto-translate replies into your language
+🎙️ Transcribe voice notes to text
+🔊 Turn text into audio with /speak
 
 **Quick start:**
 1. Send a clear prescription photo or file
@@ -89,6 +137,9 @@ Use /status to check if all services are healthy.
 • `/start` - Welcome message and introduction
 • `/help` - Show this help message  
 • `/myreminders` - View your active medication reminders
+• `/status` - Check backend and AI health
+• `/speak <text>` - Read text aloud as audio
+• `/lang <code>` - Set your language manually
 
 **How to use:**
 1. **Send Prescription Photo** 📸
@@ -122,6 +173,17 @@ Use /status to check if all services are healthy.
 • Dosage verification
 • Clear medication schedules
 • Reminder confirmations
+
+**Language and Voice:**
+• Replies translate to your selected language
+• Voice notes are transcribed to text
+• Use `/speak` to generate audio from text
+
+**Set language manually:**
+• Example: `/lang en` (English)
+• Example: `/lang hi` (Hindi)
+• Example: `/lang ar` (Arabic)
+• View supported codes: `/lang`
 
 Need help? Just ask me anything!
         """
@@ -312,7 +374,7 @@ Need help? Just ask me anything!
     async def check_backend_health(self) -> dict:
         """Check if backend server is reachable and AI key is valid"""
         try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
+            async with httpx.AsyncClient(timeout=10.0, trust_env=False) as client:
                 response = await client.get(f"{self.api_base_url}/health")
                 if response.status_code == 200:
                     return response.json()
@@ -325,7 +387,7 @@ Need help? Just ask me anything!
     async def process_prescription_api(self, photo_data: bytes) -> dict:
         """Send photo to backend API for processing"""
         try:
-            async with httpx.AsyncClient(timeout=120.0) as client:
+            async with httpx.AsyncClient(timeout=120.0, trust_env=False) as client:
                 files = {"file": ("prescription.jpg", photo_data, "image/jpeg")}
                 response = await client.post(
                     f"{self.api_base_url}/process-prescription",
@@ -366,7 +428,7 @@ Need help? Just ask me anything!
     async def process_document_api(self, document_data: bytes, mime_type: str, filename: str) -> dict:
         """Send document to backend API for processing"""
         try:
-            async with httpx.AsyncClient(timeout=120.0) as client:  # Longer timeout for documents
+            async with httpx.AsyncClient(timeout=120.0, trust_env=False) as client:  # Longer timeout for documents
                 files = {"file": (filename, document_data, mime_type)}
                 response = await client.post(
                     f"{self.api_base_url}/process-document",
@@ -475,12 +537,14 @@ Need help? Just ask me anything!
             keyboard = [
                 [InlineKeyboardButton("✅ Set Up Reminders", callback_data="setup_reminders")],
                 [InlineKeyboardButton("📋 View Full Details", callback_data="view_details")],
+                [InlineKeyboardButton("🔊 Read Aloud", callback_data="read_aloud")],
                 [InlineKeyboardButton("❌ Cancel", callback_data="cancel")]
             ]
             reply_markup = InlineKeyboardMarkup(keyboard)
 
             # Auto-translate to the user's native language!
             message = await self.translate_text(message, context)
+            context.user_data["latest_result_text"] = message
 
             chunks = self._split_for_telegram(message)
             for index, chunk in enumerate(chunks):
@@ -700,6 +764,16 @@ Need help? Just ask me anything!
                 "This bot provides basic scheduling and reminder services only.",
                 parse_mode="Markdown"
             )
+        elif query.data == "read_aloud":
+            latest_result = context.user_data.get("latest_result_text")
+            if not latest_result:
+                await safe_edit(
+                    "⚠️ I do not have a recent result to read aloud yet.\n\n"
+                    "Process a prescription first, then tap *Read Aloud*.",
+                    parse_mode="Markdown"
+                )
+            else:
+                await self._send_text_to_speech(update, context, latest_result)
         elif query.data == "cancel":
             await safe_edit("❌ Operation cancelled.")
     
@@ -742,7 +816,7 @@ Need help? Just ask me anything!
         await update.message.reply_text(msg, parse_mode='Markdown')
 
     async def translate_text(self, text: str, context: ContextTypes.DEFAULT_TYPE) -> str:
-        """Helper to seamlessly translate outgoing message blocks to the user's detected language."""
+        """Translate outgoing message blocks to the user's selected language."""
         lang = context.user_data.get('lang', 'en')
         if lang in ['en', 'unknown'] or not lang:
             return text
@@ -752,18 +826,116 @@ Need help? Just ask me anything!
             logger.error(f"Translation error: {e}")
             return text
 
-    async def handle_text(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Handle text messages and DETECT LANGUAGE automatically"""
-        text = update.message.text
-        
-        # Determine language so we can translate future reports!
+    async def lang_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Set preferred language manually using /lang <code>."""
+        if not context.args:
+            language_list = ", ".join([f"{code} ({name})" for code, name in sorted(self.SUPPORTED_LANGUAGES.items())])
+            await update.message.reply_text(
+                "🌍 *Language Settings*\n\n"
+                "Set your preferred language manually with:\n"
+                "`/lang <code>`\n\n"
+                "Examples:\n"
+                "`/lang en`\n"
+                "`/lang hi`\n"
+                "`/lang ar`\n\n"
+                f"Supported codes: {language_list}",
+                parse_mode="Markdown"
+            )
+            return
+
+        selected = context.args[0].strip().lower()
+        alias_map = {
+            "english": "en",
+            "hindi": "hi",
+            "arabic": "ar",
+            "spanish": "es",
+            "french": "fr",
+            "german": "de",
+            "chinese": "zh-cn",
+        }
+        selected = alias_map.get(selected, selected)
+
+        if selected not in self.SUPPORTED_LANGUAGES:
+            await update.message.reply_text(
+                "⚠️ Unsupported language code.\n"
+                "Use `/lang` to see the full supported list.",
+                parse_mode="Markdown"
+            )
+            return
+
+        context.user_data['lang'] = selected
+        context.user_data['lang_locked'] = True
+        await update.message.reply_text(
+            f"✅ Language set to *{self.SUPPORTED_LANGUAGES[selected]}* (`{selected}`).\n"
+            "I will use this language for future replies.",
+            parse_mode="Markdown"
+        )
+
+    def _normalize_tts_text(self, text: str) -> str:
+        """Strip lightweight formatting so spoken audio sounds natural."""
+        cleaned = re.sub(r"[*_`]+", "", text)
+        cleaned = cleaned.replace("•", "")
+        cleaned = re.sub(r"\s+", " ", cleaned)
+        return cleaned.strip()
+
+    def _select_tts_language(self, context: ContextTypes.DEFAULT_TYPE) -> str:
+        """Pick a best-effort TTS language from the user's detected language."""
+        lang = (context.user_data.get('lang') or 'en').lower()
+        supported_languages = {
+            'en', 'es', 'fr', 'de', 'it', 'pt', 'hi', 'ar', 'tr', 'nl', 'pl', 'ru',
+            'ja', 'ko', 'zh-cn', 'zh-tw', 'id', 'vi', 'th', 'sv', 'da', 'fi', 'no',
+            'el', 'he', 'cs', 'sk', 'ro', 'hu', 'uk'
+        }
+        if lang in supported_languages:
+            return lang
+        if lang.startswith('zh'):
+            return 'zh-cn'
+        return 'en'
+
+    async def _send_text_to_speech(self, update: Update, context: ContextTypes.DEFAULT_TYPE, text: str):
+        """Generate an MP3 audio reply from text and send it back to the chat."""
+        clean_text = self._normalize_tts_text(text)
+        target_message = update.effective_message
+
+        if target_message is None:
+            logger.error("TTS failed: no effective message on update")
+            return
+
+        if not clean_text:
+            await target_message.reply_text("⚠️ Nothing to read aloud.")
+            return
+
+        status_msg = await target_message.reply_text("🔊 Generating audio...")
+        audio_stream = io.BytesIO()
+        tts_lang = self._select_tts_language(context)
+
         try:
-            detected_lang = detect(text)
-            if detected_lang != context.user_data.get('lang'):
-                context.user_data['lang'] = detected_lang
-                logger.info(f"Set user {update.effective_user.id} language to {detected_lang}")
+            def _build_audio():
+                try:
+                    tts = gTTS(text=clean_text, lang=tts_lang, slow=False)
+                except ValueError:
+                    tts = gTTS(text=clean_text, lang='en', slow=False)
+                tts.write_to_fp(audio_stream)
+
+            await asyncio.to_thread(_build_audio)
+            audio_stream.seek(0)
+            await status_msg.delete()
+            await target_message.reply_audio(
+                audio=InputFile(audio_stream, filename="doctorbot-tts.mp3"),
+                caption="🔊 Audio generated from text"
+            )
         except Exception as e:
-            pass
+            logger.error(f"TTS error: {e}")
+            if status_msg:
+                await status_msg.edit_text("❌ Could not generate audio right now.")
+
+    async def handle_text(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle text messages using manually selected language."""
+        text = update.message.text
+        await self._respond_to_user_text(update, context, text)
+
+    async def _respond_to_user_text(self, update: Update, context: ContextTypes.DEFAULT_TYPE, text: str):
+        """Generate a bot reply for a user-provided text payload."""
 
         text_lower = text.lower()
         if any(word in text_lower for word in ['help', 'how', 'what', 'guide']):
@@ -781,6 +953,20 @@ Need help? Just ask me anything!
             )
             msg = await self.translate_text(msg, context)
             await update.message.reply_text(msg)
+
+    async def speak_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle /speak to convert text into audio."""
+        text = " ".join(context.args).strip()
+        if not text and update.message.reply_to_message:
+            text = update.message.reply_to_message.text or update.message.reply_to_message.caption or ""
+
+        if not text:
+            await update.message.reply_text(
+                "Usage: /speak <text>\n\nYou can also reply to a message and send /speak."
+            )
+            return
+
+        await self._send_text_to_speech(update, context, text)
 
     
     async def handle_voice(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -809,6 +995,7 @@ Need help? Just ask me anything!
                     
             text = await asyncio.to_thread(_recognize)
             await status_msg.edit_text(f"🗣️ **Transcription:**\n\n_{text}_", parse_mode='Markdown')
+            await self._respond_to_user_text(update, context, text)
             
         except sr.UnknownValueError:
             await status_msg.edit_text("⚠️ Could not understand the audio. Please speak clearly.")

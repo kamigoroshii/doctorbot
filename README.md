@@ -10,6 +10,9 @@ It accepts prescription images or documents, extracts medication details, checks
 - python-telegram-bot for Telegram integration
 - OCR pipeline with Tesseract + OpenCV
 - Hybrid prescription entity extraction for Drug / Dose / Frequency / Duration from OCR text
+- Built-in multilingual replies with auto language detection
+- Voice note transcription with SpeechRecognition
+- Text-to-speech audio replies with `/speak`
 - AI provider via environment selection:
   - `grok` with `GROK_API_KEY`
   - `openrouter` with `OPENROUTER_API_KEY`
